@@ -9,7 +9,7 @@ struct State {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    gfx: [u8; 64 * 32],
+    gfx: [[u8; 64]; 32],
     delay_timer: u8,
     sound_timer: u8,
     stack: [u16; 16],
@@ -36,7 +36,7 @@ impl State {
             v: [0; 16],
             i: 0,
             pc: 512,
-            gfx: [0; 64 * 32],
+            gfx: [[0; 64]; 32],
             delay_timer: 0,
             sound_timer: 0,
             stack: [0; 16],
@@ -62,7 +62,7 @@ impl State {
 
     // 0x00E0: Clears the screen
     fn x00E0(&mut self) {
-        self.gfx.fill(0);
+        self.gfx.fill([0; 64]);
         self.draw_flag = true
     }
 
@@ -207,19 +207,20 @@ impl State {
 
     // DXYN: Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
     fn xDXYN(&mut self) {
-        let (_, x, y, height) = self.opcode;
-        let x = self.v[x as usize] as u16;
-        let y = self.v[y as usize] as u16;
-        let height = height as u16;
+        let (_, x, y, n) = self.opcode;
+        let x = self.v[x as usize] as usize;
+        let y = self.v[y as usize] as usize;
+        let n = n as usize;
         self.v[0xF] = 0;
-        for yline in 0..height {
-            let pixel = self.memory[(self.i + yline) as usize];
+
+        for yline in 0..n {
+            let pixel = self.memory[self.i as usize + yline];
             for xline in 0..8 {
                 if (pixel & (0x80 >> xline)) != 0 {
-                    if self.gfx[(x + xline + ((y + yline) * 64)) as usize] == 1 {
+                    if self.gfx[y + yline][x + xline] == 1 {
                         self.v[0xF] = 1;
                     }
-                    self.gfx[(x + xline + ((y + yline) * 64)) as usize] ^= 1;
+                    self.gfx[y + yline][x + xline] ^= 1;
                 }
             }
         }
@@ -379,7 +380,7 @@ impl State {
             self.sound_timer -= 1;
         }
     }
-    fn get_gfx(&self) -> &[u8] {
+    fn get_gfx(&self) -> &[[u8; 64]] {
         &self.gfx[..]
     }
 }
@@ -389,15 +390,16 @@ fn main() {
     c8.load_rom("./tetris.c8").unwrap();
     loop {
         c8.emulate_cycle();
-        for i in 0..32 {
-            for j in 0..64 {
-                if c8.get_gfx()[i * 64 + j] == 0 {
+        let gfx = c8.get_gfx();
+        for i in 0..gfx.len() {
+            for j in 0..gfx[0].len() {
+                if gfx[i][j] == 0 {
                     print!(" ");
                 } else {
                     print!("*");
                 }
             }
-            println!("");
+            println!();
         }
     }
 }
