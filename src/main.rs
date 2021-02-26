@@ -54,8 +54,7 @@ impl State {
     }
 
     fn NNN(&self) -> u16 {
-        let pc = self.pc as usize;
-        ((self.memory[pc] & 0x0F) as u16) << 8 | self.memory[pc + 1] as u16
+        (self.opcode.1 as u16) << 8 | self.memory[self.pc as usize + 1] as u16
     }
     fn NN(&self) -> u8 {
         self.memory[self.pc as usize + 1]
