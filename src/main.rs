@@ -48,7 +48,8 @@ impl State {
 
     fn load_rom(&mut self, rom_path: &str) -> Result<(), Box<dyn Error>> {
         let rom = fs::read(rom_path)?;
-        self.memory[512..512 + rom.len()].copy_from_slice(&rom);
+        let pc = self.pc as usize;
+        self.memory[pc..pc + rom.len()].copy_from_slice(&rom);
         Ok(())
     }
 
