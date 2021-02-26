@@ -93,6 +93,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .window_setup(ggez::conf::WindowSetup::default().title("CHIP-8"))
         .window_mode(ggez::conf::WindowMode::default().dimensions(640.0, 320.0))
         .build()?;
-    let state = State::new("./tetris.c8")?;
-    event::run(ctx, events_loop, state)
+
+    if let Some(game) = std::env::args().nth(1) {
+        let state = State::new(&game)?;
+        event::run(ctx, events_loop, state)
+    } else {
+        panic!("Error: you need to pass the game as argument");
+    }
 }
