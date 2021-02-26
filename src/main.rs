@@ -4,7 +4,7 @@ use std::{error::Error, usize};
 
 use rand::{thread_rng, Rng};
 struct State {
-    opcode: u16,
+    opcode: (u8, u8, u8, u8),
     memory: [u8; 4096],
     v: [u8; 16],
     i: u16,
@@ -31,7 +31,7 @@ impl State {
         ];
         memory[..80].copy_from_slice(&chip8_fontset);
         Self {
-            opcode: 0,
+            opcode: (0, 0, 0, 0),
             memory,
             v: [0; 16],
             i: 0,
@@ -52,155 +52,169 @@ impl State {
         Ok(())
     }
 
-    fn x0(&mut self) {
-        match self.opcode {
-            0x00E0 => {
-                self.gfx.fill(0);
-                self.draw_flag = true
-            }
-            0x00EE => {
-                //self.sp -= 1;
-                self.sp = self.sp.saturating_sub(1);
-                self.pc = self.stack[self.sp as usize];
-            }
-            _ => panic!("Unknown Opcode {:#X}", self.opcode),
-        }
-        self.pc += 2;
+    fn NNN(&self) -> u16 {
+        let pc = self.pc as usize;
+        ((self.memory[pc] & 0x0F) as u16) << 8 | self.memory[pc + 1] as u16
+    }
+    fn NN(&self) -> u8 {
+        self.memory[self.pc as usize + 1]
     }
 
-    fn x1(&mut self) {
-        self.pc = self.opcode & 0x0FFF;
+    // 0x00E0: Clears the screen
+    fn x00E0(&mut self) {
+        self.gfx.fill(0);
+        self.draw_flag = true
     }
 
-    fn x2(&mut self) {
+    // 0x00EE: Returns from subroutine
+    fn x00EE(&mut self) {
+        self.sp = self.sp.saturating_sub(1);
+        self.pc = self.stack[self.sp as usize];
+    }
+
+    // 0x1NNN: Jumps to address NNN
+    fn x1NNN(&mut self) {
+        self.pc = Self::NNN(self) - 2;
+    }
+
+    // 0x2NNN: Calls subroutine at NNN.
+    fn x2NNN(&mut self) {
         self.stack[self.sp as usize] = self.pc;
-        self.pc += 1;
-        self.pc = self.opcode & 0x0FFF;
+        self.sp += 1;
+        self.pc = Self::NNN(self) - 2;
     }
 
-    fn x3(&mut self) {
-        if self.v[((self.opcode & 0x0F00) >> 8) as usize] as u16 == (self.opcode & 0x00FF) {
-            self.pc += 4;
-        } else {
+    // 0x3XNN: Skips the next instruction if VX equals NN
+    fn x3XNN(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        if self.v[x as usize] == Self::NN(&self) {
             self.pc += 2;
         }
     }
 
-    fn x4(&mut self) {
-        if self.v[((self.opcode & 0x0F00) >> 8) as usize] as u16 != (self.opcode & 0x00FF) {
-            self.pc += 4;
-        } else {
+    // 0x4XNN: Skips the next instruction if VX doesn't equal NN
+    fn x4XNN(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        if self.v[x as usize] != Self::NN(&self) {
+            self.pc += 2;
+        }
+    }
+    // 0x5XY0: Skips the next instruction if VX equals VY.
+    fn x5XY0(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        if x == y {
             self.pc += 2;
         }
     }
 
-    fn x5(&mut self) {
-        if self.v[((self.opcode & 0x0F00) >> 8) as usize]
-            == self.v[((self.opcode & 0x00F0) >> 4) as usize]
-        {
-            self.pc += 4;
-        } else {
+    // 0x6XNN: Sets VX to NN.
+    fn x6XNN(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.v[x as usize] = Self::NN(&self);
+    }
+
+    // 0x7XNN: Adds NN to VX.
+    fn x7XNN(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.v[x as usize] += Self::NN(&self);
+    }
+
+    // 0x8XY0: Sets VX to the value of VY
+    fn x8XY0(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        self.v[x as usize] = self.v[y as usize];
+    }
+
+    // 0x8XY1: Sets VX to "VX OR VY"
+    fn x8XY1(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        self.v[x as usize] |= self.v[y as usize];
+    }
+
+    // 0x8XY2: Sets VX to "VX AND VY"
+    fn x8XY2(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        self.v[x as usize] &= self.v[y as usize];
+    }
+
+    // 0x8XY3: Sets VX to "VX XOR VY"
+    fn x8XY3(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        self.v[x as usize] ^= self.v[y as usize];
+    }
+
+    // 0x8XY4: Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't
+    fn x8XY4(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        let (result, overflow) = self.v[x as usize].overflowing_add(self.v[y as usize]);
+        self.v[x as usize] = result;
+        self.v[0xF] = overflow as u8;
+    }
+
+    // 0x8XY5: VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't
+    fn x8XY5(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        let (result, borrow) = self.v[x as usize].overflowing_sub(self.v[y as usize]);
+        self.v[x as usize] = result;
+        self.v[0xF] = borrow as u8;
+    }
+
+    // 0x8XY6: Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift
+    fn x8XY6(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.v[0xF] = self.v[x as usize] & 0x1;
+        self.v[x as usize] >>= 1;
+    }
+
+    // 0x8XY7: Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't
+    fn x8XY7(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        let (result, borrow) = self.v[y as usize].overflowing_sub(self.v[x as usize]);
+        self.v[x as usize] = result;
+        self.v[0xF] = borrow as u8;
+    }
+
+    // 0x8XYE: Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift
+    fn x8XYE(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.v[0xF] = self.v[x as usize] >> 7;
+        self.v[x as usize] <<= 1;
+    }
+
+    // 0x9XY0: Skips the next instruction if VX doesn't equal VY
+    fn x9XY0(&mut self) {
+        let (_, x, y, _) = self.opcode;
+        if self.v[x as usize] != self.v[y as usize] {
             self.pc += 2;
         }
     }
 
-    fn x6(&mut self) {
-        self.v[((self.opcode & 0x0F00) >> 8) as usize] = (self.opcode & 0x00FF) as u8;
-        self.pc += 2;
+    // ANNN: Sets I to the address NNN
+    fn xANNN(&mut self) {
+        self.i = Self::NNN(self);
     }
 
-    fn x7(&mut self) {
-        self.v[((self.opcode & 0x0F00) >> 8) as usize] += (self.opcode & 0x00FF) as u8;
-        self.pc += 2;
+    // BNNN: Jumps to the address NNN plus V0
+    fn xBNNN(&mut self) {
+        self.i = Self::NNN(self) + self.v[0] as u16 - 2;
     }
 
-    fn x8(&mut self) {
-        match self.opcode & 0x000F {
-            0x0000 => {
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] =
-                    self.v[((self.opcode & 0x00F0) >> 4) as usize];
-            }
-            0x0001 => {
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] |=
-                    self.v[((self.opcode & 0x00F0) >> 4) as usize];
-            }
-            0x0002 => {
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] &=
-                    self.v[((self.opcode & 0x00F0) >> 4) as usize];
-            }
-            0x0003 => {
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] ^=
-                    self.v[((self.opcode & 0x00F0) >> 4) as usize];
-            }
-            0x0004 => {
-                let (result, overflow) = self.v[((self.opcode & 0x0F00) >> 8) as usize]
-                    .overflowing_add(self.v[((self.opcode & 0x00F0) >> 4) as usize]);
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] = result;
-                self.v[0xF] = overflow as u8;
-            }
-
-            0x0005 => {
-                let (result, borrow) = self.v[((self.opcode & 0x0F00) >> 8) as usize]
-                    .overflowing_sub(self.v[((self.opcode & 0x00F0) >> 4) as usize]);
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] = result;
-                self.v[0xF] = borrow as u8;
-            }
-            0x0006 => {
-                self.v[0xF] = self.v[((self.opcode & 0x0F00) >> 8) as usize] & 0x1;
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] >>= 1;
-            }
-            0x0007 => {
-                let (result, borrow) = self.v[((self.opcode & 0x00F0) >> 4) as usize]
-                    .overflowing_sub(self.v[((self.opcode & 0x0F00) >> 8) as usize]);
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] = result;
-                self.v[0xF] = borrow as u8;
-            }
-
-            0x000E => {
-                self.v[0xF] = self.v[((self.opcode & 0x0F00) >> 8) as usize] >> 7;
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] <<= 1;
-            }
-
-            _ => panic!("Unknown Opcode {:#X}", self.opcode),
-        }
-        self.pc += 2;
+    // CXNN: Sets VX to a random number and NN
+    fn xCXNN(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.v[x as usize] = thread_rng().gen::<u8>() & Self::NN(self);
     }
 
-    fn x9(&mut self) {
-        if self.v[((self.opcode & 0x0F00) >> 8) as usize]
-            != self.v[((self.opcode & 0x00F0) >> 4) as usize]
-        {
-            self.pc += 4;
-        } else {
-            self.pc += 2;
-        }
-    }
-
-    fn xA(&mut self) {
-        self.i = self.opcode & 0x0FFF;
-        self.pc += 2;
-    }
-
-    fn xB(&mut self) {
-        self.pc = (self.opcode & 0x0FFF) + self.v[0] as u16;
-    }
-
-    fn xC(&mut self) {
-        self.v[((self.opcode & 0x0F00) >> 8) as usize] =
-            thread_rng().gen::<u8>() & ((self.opcode & 0x00FF) as u8);
-        self.pc += 2;
-    }
-
-    fn xD(&mut self) {
-        let x = self.v[((self.opcode & 0x0F00) >> 8) as usize] as u16;
-        let y = self.v[((self.opcode & 0x00F0) >> 4) as usize] as u16;
-        let height = self.opcode & 0x000F;
-
+    // DXYN: Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
+    fn xDXYN(&mut self) {
+        let (_, x, y, height) = self.opcode;
+        let x = self.v[x as usize] as u16;
+        let y = self.v[y as usize] as u16;
+        let height = height as u16;
         self.v[0xF] = 0;
         for yline in 0..height {
             let pixel = self.memory[(self.i + yline) as usize];
             for xline in 0..8 {
-                //{
                 if (pixel & (0x80 >> xline)) != 0 {
                     if self.gfx[(x + xline + ((y + yline) * 64)) as usize] == 1 {
                         self.v[0xF] = 1;
@@ -209,124 +223,151 @@ impl State {
                 }
             }
         }
-
         self.draw_flag = true;
-        self.pc += 2;
+    }
+    // EX9E: Skips the next instruction if the key stored in VX is pressed
+    fn xEX9E(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        if self.key[self.v[x as usize] as usize] != 0 {
+            self.pc += 2;
+        }
+    }
+    // EXA1: Skips the next instruction if the key stored in VX isn't pressed
+    fn xEXA1(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        if self.key[self.v[x as usize] as usize] == 0 {
+            self.pc += 2;
+        }
+    }
+    // FX07: Sets VX to the value of the delay timer
+    fn xFX07(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.v[x as usize] = self.delay_timer;
     }
 
-    fn xE(&mut self) {
-        match self.opcode & 0xF0FF {
-            0xE09E => {
-                if self.key[self.v[((self.opcode & 0x0F00) >> 8) as usize] as usize] != 0 {
-                    self.pc += 4;
-                } else {
-                    self.pc += 2;
-                }
+    // FX0A: A key press is awaited, and then stored in VX
+    fn xFX0A(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        let mut key_press = false;
+
+        for (i, &k) in self.key.iter().enumerate() {
+            if k != 0 {
+                self.v[x as usize] = i as u8;
+                key_press = true;
             }
-            0xE0A1 => {
-                if self.key[self.v[((self.opcode & 0x0F00) >> 8) as usize] as usize] == 0 {
-                    self.pc += 4;
-                } else {
-                    self.pc += 2;
-                }
-            }
-            _ => panic!("Unknown Opcode {:#X}", self.opcode),
+        }
+
+        // If we didn't received a keypress, skip this cycle and try again.
+        if !key_press {
+            self.pc -= 2;
         }
     }
 
-    fn xF(&mut self) {
-        match self.opcode & 0xF0FF {
-            0xF007 => {
-                self.v[((self.opcode & 0x0F00) >> 8) as usize] = self.delay_timer;
-                self.pc += 2;
-            }
-            0xF00A => {
-                let mut key_press = false;
+    // FX15: Sets the delay timer to VX
+    fn xFX15(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.delay_timer = self.v[x as usize];
+    }
 
-                for (i, &k) in self.key.iter().enumerate() {
-                    if k != 0 {
-                        self.v[((self.opcode & 0x0F00) >> 8) as usize] = i as u8;
-                        key_press = true;
-                    }
-                }
+    // FX18: Sets the sound timer to VX
+    fn xFX18(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.sound_timer = self.v[x as usize];
+    }
 
-                // If we didn't received a keypress, skip this cycle and try again.
-                if !key_press {
-                    return;
-                }
-
-                self.pc += 2;
-            }
-            0xF015 => {
-                self.delay_timer = self.v[((self.opcode & 0x0F00) >> 8) as usize];
-                self.pc += 2;
-            }
-            0xF018 => {
-                self.sound_timer = self.v[((self.opcode & 0x0F00) >> 8) as usize];
-                self.pc += 2;
-            }
-            0xF01E => {
-                if self.i + self.v[((self.opcode & 0x0F00) >> 8) as usize] as u16 > 0xFFF {
-                    // VF is set to 1 when range overflow (I+VX>0xFFF), and 0 when there isn't.
-                    self.v[0xF] = 1;
-                } else {
-                    self.v[0xF] = 0;
-                }
-                self.i += self.v[((self.opcode & 0x0F00) >> 8) as usize] as u16;
-                self.pc += 2;
-            }
-            0xF029 => {
-                self.i = self.v[((self.opcode & 0x0F00) >> 8) as usize] as u16 * 0x5;
-                self.pc += 2;
-            }
-            0xF033 => {
-                let i = self.i as usize;
-                self.memory[i] = self.v[((self.opcode & 0x0F00) >> 8) as usize] / 100;
-                self.memory[i + 1] = (self.v[((self.opcode & 0x0F00) >> 8) as usize] / 10) % 10;
-                self.memory[i + 2] = (self.v[((self.opcode & 0x0F00) >> 8) as usize] % 100) % 10;
-                self.pc += 2;
-            }
-            0xF055 => {
-                let x = ((self.opcode & 0x0F00) >> 8) as usize;
-                let i = self.i as usize;
-                self.memory[i..=i + x].copy_from_slice(&self.v[0..=x]);
-                //self.i += x as u16;
-                self.pc += 2;
-            }
-            0xF065 => {
-                let x = ((self.opcode & 0x0F00) >> 8) as usize;
-                let i = self.i as usize;
-                self.v[0..=x].copy_from_slice(&self.memory[i..=i + x]);
-
-                //self.i += x as u16;
-                self.pc += 2;
-            }
-            _ => panic!("Unknown Opcode {:#X}", self.opcode),
+    // FX1E: Adds VX to I
+    fn xFX1E(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        if self.i + self.v[x as usize] as u16 > 0xFFF {
+            // VF is set to 1 when range overflow (I+VX>0xFFF), and 0 when there isn't.
+            self.v[0xF] = 1;
+        } else {
+            self.v[0xF] = 0;
         }
+        self.i += self.v[x as usize] as u16;
+    }
+
+    // FX29: Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font
+    fn xFX29(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        self.i = self.v[x as usize] as u16 * 0x5;
+    }
+
+    // FX33: Stores the Binary-coded decimal representation of VX at the addresses I, I plus 1, and I plus 2
+    fn xFX33(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        let i = self.i as usize;
+        self.memory[i] = self.v[x as usize] / 100;
+        self.memory[i + 1] = (self.v[x as usize] / 10) % 10;
+        self.memory[i + 2] = (self.v[x as usize] % 100) % 10;
+    }
+
+    // FX55: Stores V0 to VX in memory starting at address I
+    fn xFX55(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        let i = self.i as usize;
+        self.memory[i..=i + x as usize].copy_from_slice(&self.v[0..=x as usize]);
+        //self.i += x as u16;
+    }
+    // FX65: Fills V0 to VX with values from memory starting at address I
+    fn xFX65(&mut self) {
+        let (_, x, _, _) = self.opcode;
+        let i = self.i as usize;
+        self.v[0..=x as usize].copy_from_slice(&self.memory[i..=i + x as usize]);
+        //self.i += x as u16;
     }
 
     fn emulate_cycle(&mut self) {
         let pc = self.pc as usize;
-        self.opcode = (self.memory[pc] as u16) << 8 | self.memory[pc + 1] as u16;
-        match self.opcode >> 12 {
-            0x0 => Self::x0(self),
-            0x1 => Self::x1(self),
-            0x2 => Self::x2(self),
-            0x3 => Self::x3(self),
-            0x4 => Self::x4(self),
-            0x5 => Self::x5(self),
-            0x6 => Self::x6(self),
-            0x7 => Self::x7(self),
-            0x8 => Self::x8(self),
-            0x9 => Self::x9(self),
-            0xA => Self::xA(self),
-            0xB => Self::xB(self),
-            0xC => Self::xC(self),
-            0xD => Self::xD(self),
-            0xE => Self::xE(self),
-            0xF => Self::xF(self),
-            _ => panic!("Unknown Opcode {:#X}", self.opcode),
+        self.opcode = (
+            (self.memory[pc] & 0xF0) >> 4,
+            self.memory[pc] & 0x0F,
+            (self.memory[pc + 1] & 0xF0) >> 4,
+            self.memory[pc + 1] & 0x0F,
+        );
+        let opcode_fn = match self.opcode {
+            (0, 0, 0xE, 0) => Self::x00E0,
+            (0, 0, 0xE, 0xE) => Self::x00EE,
+            (1, ..) => Self::x1NNN,
+            (2, ..) => Self::x2NNN,
+            (3, ..) => Self::x3XNN,
+            (4, ..) => Self::x4XNN,
+            (5, ..) => Self::x5XY0,
+            (6, ..) => Self::x6XNN,
+            (7, ..) => Self::x7XNN,
+            (8, .., 0) => Self::x8XY0,
+            (8, .., 1) => Self::x8XY1,
+            (8, .., 2) => Self::x8XY2,
+            (8, .., 3) => Self::x8XY3,
+            (8, .., 4) => Self::x8XY4,
+            (8, .., 5) => Self::x8XY5,
+            (8, .., 6) => Self::x8XY6,
+            (8, .., 7) => Self::x8XY7,
+            (8, .., 0xE) => Self::x8XYE,
+            (9, ..) => Self::x9XY0,
+            (0xA, ..) => Self::xANNN,
+            (0xB, ..) => Self::xBNNN,
+            (0xC, ..) => Self::xCXNN,
+            (0xD, ..) => Self::xDXYN,
+            (0xE, _, 9, 0xE) => Self::xEX9E,
+            (0xE, _, 0xA, 1) => Self::xEXA1,
+            (0xF, _, 0, 7) => Self::xFX07,
+            (0xF, _, 0, 0xA) => Self::xFX0A,
+            (0xF, _, 1, 5) => Self::xFX15,
+            (0xF, _, 1, 8) => Self::xFX18,
+            (0xF, _, 1, 0xE) => Self::xFX1E,
+            (0xF, _, 2, 9) => Self::xFX29,
+            (0xF, _, 3, 3) => Self::xFX33,
+            (0xF, _, 5, 5) => Self::xFX55,
+            (0xF, _, 6, 5) => Self::xFX65,
+            _ => panic!(
+                "Unknown Opcode ({:#X},{:#X},{:#X},{:#X})",
+                self.opcode.0, self.opcode.1, self.opcode.2, self.opcode.3
+            ),
         };
+
+        opcode_fn(self);
+        self.pc += 2;
 
         if self.delay_timer > 0 {
             self.delay_timer -= 1;
