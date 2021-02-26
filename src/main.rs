@@ -14,7 +14,7 @@ struct State {
     sound_timer: u8,
     stack: [u16; 16],
     sp: u16,
-    key: [u8; 16],
+    keys: [u8; 16],
     draw_flag: bool,
 }
 
@@ -41,7 +41,7 @@ impl State {
             sound_timer: 0,
             stack: [0; 16],
             sp: 0,
-            key: [0; 16],
+            keys: [0; 16],
             draw_flag: true,
         }
     }
@@ -229,14 +229,14 @@ impl State {
     // EX9E: Skips the next instruction if the key stored in VX is pressed
     fn xEX9E(&mut self) {
         let (_, x, ..) = self.opcode;
-        if self.key[self.v[x as usize] as usize] != 0 {
+        if self.keys[self.v[x as usize] as usize] != 0 {
             self.pc += 2;
         }
     }
     // EXA1: Skips the next instruction if the key stored in VX isn't pressed
     fn xEXA1(&mut self) {
         let (_, x, ..) = self.opcode;
-        if self.key[self.v[x as usize] as usize] == 0 {
+        if self.keys[self.v[x as usize] as usize] == 0 {
             self.pc += 2;
         }
     }
