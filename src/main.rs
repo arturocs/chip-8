@@ -86,7 +86,7 @@ impl State {
 
     // 0x3XNN: Skips the next instruction if VX equals NN
     fn x3XNN(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         if self.v[x as usize] == Self::NN(&self) {
             self.pc += 2;
         }
@@ -94,7 +94,7 @@ impl State {
 
     // 0x4XNN: Skips the next instruction if VX doesn't equal NN
     fn x4XNN(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         if self.v[x as usize] != Self::NN(&self) {
             self.pc += 2;
         }
@@ -109,13 +109,13 @@ impl State {
 
     // 0x6XNN: Sets VX to NN.
     fn x6XNN(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.v[x as usize] = Self::NN(&self);
     }
 
     // 0x7XNN: Adds NN to VX.
     fn x7XNN(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.v[x as usize] += Self::NN(&self);
     }
 
@@ -161,7 +161,7 @@ impl State {
 
     // 0x8XY6: Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift
     fn x8XY6(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.v[0xF] = self.v[x as usize] & 0x1;
         self.v[x as usize] >>= 1;
     }
@@ -176,7 +176,7 @@ impl State {
 
     // 0x8XYE: Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift
     fn x8XYE(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.v[0xF] = self.v[x as usize] >> 7;
         self.v[x as usize] <<= 1;
     }
@@ -201,7 +201,7 @@ impl State {
 
     // CXNN: Sets VX to a random number and NN
     fn xCXNN(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.v[x as usize] = thread_rng().gen::<u8>() & Self::NN(self);
     }
 
@@ -228,27 +228,27 @@ impl State {
     }
     // EX9E: Skips the next instruction if the key stored in VX is pressed
     fn xEX9E(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         if self.key[self.v[x as usize] as usize] != 0 {
             self.pc += 2;
         }
     }
     // EXA1: Skips the next instruction if the key stored in VX isn't pressed
     fn xEXA1(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         if self.key[self.v[x as usize] as usize] == 0 {
             self.pc += 2;
         }
     }
     // FX07: Sets VX to the value of the delay timer
     fn xFX07(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.v[x as usize] = self.delay_timer;
     }
 
     // FX0A: A key press is awaited, and then stored in VX
     fn xFX0A(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         let mut key_press = false;
 
         for (i, &k) in self.key.iter().enumerate() {
@@ -266,19 +266,19 @@ impl State {
 
     // FX15: Sets the delay timer to VX
     fn xFX15(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.delay_timer = self.v[x as usize];
     }
 
     // FX18: Sets the sound timer to VX
     fn xFX18(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.sound_timer = self.v[x as usize];
     }
 
     // FX1E: Adds VX to I
     fn xFX1E(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         if self.i + self.v[x as usize] as u16 > 0xFFF {
             // VF is set to 1 when range overflow (I+VX>0xFFF), and 0 when there isn't.
             self.v[0xF] = 1;
@@ -290,13 +290,13 @@ impl State {
 
     // FX29: Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font
     fn xFX29(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         self.i = self.v[x as usize] as u16 * 0x5;
     }
 
     // FX33: Stores the Binary-coded decimal representation of VX at the addresses I, I plus 1, and I plus 2
     fn xFX33(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         let i = self.i as usize;
         self.memory[i] = self.v[x as usize] / 100;
         self.memory[i + 1] = (self.v[x as usize] / 10) % 10;
@@ -305,14 +305,14 @@ impl State {
 
     // FX55: Stores V0 to VX in memory starting at address I
     fn xFX55(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         let i = self.i as usize;
         self.memory[i..=i + x as usize].copy_from_slice(&self.v[0..=x as usize]);
         //self.i += x as u16;
     }
     // FX65: Fills V0 to VX with values from memory starting at address I
     fn xFX65(&mut self) {
-        let (_, x, _, _) = self.opcode;
+        let (_, x, ..) = self.opcode;
         let i = self.i as usize;
         self.v[0..=x as usize].copy_from_slice(&self.memory[i..=i + x as usize]);
         //self.i += x as u16;
