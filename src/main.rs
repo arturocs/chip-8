@@ -249,17 +249,10 @@ impl State {
     // FX0A: A key press is awaited, and then stored in VX
     fn xFX0A(&mut self) {
         let (_, x, ..) = self.opcode;
-        let mut key_press = false;
-
-        for (i, &k) in self.key.iter().enumerate() {
-            if k != 0 {
-                self.v[x as usize] = i as u8;
-                key_press = true;
-            }
-        }
-
-        // If we didn't received a keypress, skip this cycle and try again.
-        if !key_press {
+        if let Some((i, _)) = self.keys.iter().enumerate().find(|(_, &k)| k != 0) {
+            self.v[x as usize] = i as u8
+        } else {
+            // If we didn't received a keypress, skip this cycle and try again.
             self.pc -= 2;
         }
     }
