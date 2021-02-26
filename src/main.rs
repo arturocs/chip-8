@@ -7,8 +7,6 @@ use chip8::Chip8;
 use ggez::event::{KeyCode, KeyMods};
 use ggez::{event, graphics, Context, GameResult};
 
-// We'll bring in some things from `std` to help us in the future.
-
 struct State {
     chip8: Chip8,
     speed: u8,
@@ -45,8 +43,6 @@ impl State {
 
 impl event::EventHandler for State {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
-        // First we check to see if enough time has elapsed since our last update based on
-        // the update rate we defined at the top.
         for _ in 0..self.speed {
             self.chip8.emulate_cycle();
         }
