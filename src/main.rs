@@ -272,12 +272,14 @@ impl State {
     // FX1E: Adds VX to I
     fn xFX1E(&mut self) {
         let (_, x, ..) = self.opcode;
-        if self.i + self.v[x as usize] as u16 > 0xFFF {
-            // VF is set to 1 when range overflow (I+VX>0xFFF), and 0 when there isn't.
-            self.v[0xF] = 1;
-        } else {
-            self.v[0xF] = 0;
-        }
+        // Most CHIP-8 interpreters' FX1E instructions do not affect VF, with one exception: The CHIP-8 interpreter for the Commodore
+        // Amiga sets VF to 1 when there is a range overflow (I+VX>0xFFF), and to 0 when there isn't. The only known game that
+        // depends on this behavior is Spacefight 2091! while at least one game, Animal Race, depends on VF not being affected.
+        // if self.i + self.v[x as usize] as u16 > 0xFFF {
+        //    self.v[0xF] = 1;
+        // } else {
+        //     self.v[0xF] = 0;
+        // }
         self.i += self.v[x as usize] as u16;
     }
 
