@@ -4,8 +4,11 @@ use std::error::Error;
 
 use chip8::Chip8;
 
-use ggez::event::{KeyCode, KeyMods};
 use ggez::{event, graphics, Context, GameResult};
+use ggez::{
+    event::{KeyCode, KeyMods},
+    graphics::Color,
+};
 
 struct State {
     chip8: Chip8,
@@ -49,7 +52,7 @@ impl event::EventHandler for State {
         Ok(())
     }
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        graphics::clear(ctx, [0.0, 0.0, 0.0, 0.0].into());
+        graphics::clear(ctx, Color::BLACK);
         let screen = self.chip8.get_gfx();
         for i in 0..screen.len() {
             for j in 0..screen[0].len() {
@@ -58,7 +61,7 @@ impl event::EventHandler for State {
                         ctx,
                         graphics::DrawMode::fill(),
                         graphics::Rect::new_i32(j as i32 * 10, i as i32 * 10, 10, 10),
-                        [1.0, 1.0, 1.0, 1.0].into(),
+                        Color::WHITE,
                     )?;
                     graphics::draw(ctx, &rectangle, (ggez::mint::Point2 { x: 0.0, y: 0.0 },))?;
                 }
